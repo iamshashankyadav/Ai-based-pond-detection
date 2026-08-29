@@ -1,14 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
   Search, 
   Layers, 
   Square, 
   ChevronLeft, 
-  ChevronRight, 
-  MapPin, 
-  SlidersHorizontal,
-  Compass,
-  FileCode2
+  ChevronRight 
 } from 'lucide-react';
 import LocationSearch from './LocationSearch';
 import LayerControl from './LayerControl';
@@ -33,6 +29,7 @@ export default function Sidebar({
   onClearSelection,
   onOpenPayloadModal,
   onFitSelection,
+  onSelectPresetAOI,
 }) {
   return (
     <aside className={`gis-sidebar ${isOpen ? 'open' : 'closed'}`}>
@@ -105,6 +102,7 @@ export default function Sidebar({
               onClearSelection={onClearSelection}
               onOpenPayloadModal={onOpenPayloadModal}
               onFitSelection={onFitSelection}
+              onSelectPresetAOI={onSelectPresetAOI}
             />
           )}
         </div>
