@@ -10,9 +10,59 @@ import {
   Send, 
   HelpCircle,
   Crosshair,
-  Maximize
+  Maximize,
+  Sparkles,
+  MousePointerClick
 } from 'lucide-react';
 import { formatArea } from '../services/geoUtils';
+
+// Sample predefined regional AOI templates for one-click testing
+const PRESET_AOIS = [
+  {
+    id: 'bhilai-sec7-aoi',
+    name: 'Bhilai Sector 7 Catchment BBox',
+    type: 'bbox',
+    bbox: [21.1950, 81.3980, 21.2250, 81.4450],
+    center: { lat: 21.2100, lng: 81.4215 },
+    areaSqMeters: 16250000,
+    areaHectares: 1625.0,
+    perimeterMeters: 16200,
+  },
+  {
+    id: 'patan-farmland-poly',
+    name: 'Patan Agricultural Cluster (Polygon AOI)',
+    type: 'polygon',
+    points: [
+      [21.0450, 81.5250],
+      [21.0520, 81.5450],
+      [21.0380, 81.5580],
+      [21.0250, 81.5420],
+      [21.0310, 81.5220],
+    ],
+    bbox: [21.0250, 81.5220, 21.0520, 81.5580],
+    center: { lat: 21.0382, lng: 81.5384 },
+    areaSqMeters: 7420000,
+    areaHectares: 742.0,
+    perimeterMeters: 11400,
+  },
+  {
+    id: 'jamul-basin-aoi',
+    name: 'Jamul Limestone Watershed (Polygon AOI)',
+    type: 'polygon',
+    points: [
+      [21.2550, 81.3850],
+      [21.2620, 81.4120],
+      [21.2480, 81.4210],
+      [21.2350, 81.4050],
+      [21.2390, 81.3820],
+    ],
+    bbox: [21.2350, 81.3820, 21.2620, 81.4210],
+    center: { lat: 21.2478, lng: 81.4010 },
+    areaSqMeters: 8900000,
+    areaHectares: 890.0,
+    perimeterMeters: 12800,
+  }
+];
 
 export default function AreaSelectorToolbar({
   activeDrawMode,
@@ -21,7 +71,7 @@ export default function AreaSelectorToolbar({
   onClearSelection,
   onOpenPayloadModal,
   onFitSelection,
-  isDrawing
+  onSelectPresetAOI
 }) {
   const formattedArea = activeSelection?.areaSqMeters
     ? formatArea(activeSelection.areaSqMeters)
@@ -49,7 +99,7 @@ export default function AreaSelectorToolbar({
           </div>
           <div className="tool-content">
             <span className="tool-title">Bounding Box (BBox)</span>
-            <span className="tool-desc">Click & drag rectangle over village region</span>
+            <span className="tool-desc">Click 1st corner, then opposite corner on map</span>
           </div>
           {activeDrawMode === 'bbox' && <span className="active-indicator" />}
         </button>
@@ -62,8 +112,8 @@ export default function AreaSelectorToolbar({
             <Hexagon size={20} />
           </div>
           <div className="tool-content">
-            <span className="tool-title">Freehand Polygon</span>
-            <span className="tool-desc">Click vertices along natural contour/boundary</span>
+            <span className="tool-title">Freeform Polygon</span>
+            <span className="tool-desc">Click vertices; close at 1st point or click Finish</span>
           </div>
           {activeDrawMode === 'polygon' && <span className="active-indicator" />}
         </button>
@@ -77,7 +127,7 @@ export default function AreaSelectorToolbar({
           </div>
           <div className="tool-content">
             <span className="tool-title">Candidate Pond Point</span>
-            <span className="tool-desc">Click on map to place pour point / sink</span>
+            <span className="tool-desc">Click on map to drop candidate pour point / sink</span>
           </div>
           {activeDrawMode === 'point' && <span className="active-indicator" />}
         </button>
@@ -109,9 +159,9 @@ export default function AreaSelectorToolbar({
             </span>
           </div>
           <p className="banner-text">
-            {activeDrawMode === 'bbox' && 'Click and drag on the satellite map to define the bounding box.'}
-            {activeDrawMode === 'polygon' && 'Click on map to add boundary points. Double click or click the first point to finish.'}
-            {activeDrawMode === 'point' && 'Click anywhere on the map to set candidate pond location.'}
+            {activeDrawMode === 'bbox' && 'Step 1: Click anywhere on the map to set the starting corner. Step 2: Click the opposite corner to complete the rectangle.'}
+            {activeDrawMode === 'polygon' && 'Click around your area of interest to place vertices. A live line follows your cursor. Click the green starting point or the "Finish Polygon" button on the map when done.'}
+            {activeDrawMode === 'point' && 'Click any location on the map to place a candidate village pond point.'}
           </p>
         </div>
       )}
@@ -147,7 +197,7 @@ export default function AreaSelectorToolbar({
               <div className="metric-box">
                 <span className="metric-label">Calculated Area</span>
                 <span className="metric-value primary">{formattedArea.primary}</span>
-                <span className="metric-sub">{formattedArea.acres}</span>
+                <span className="metric-sub">{formattedArea.hectares} &bull; {formattedArea.acres}</span>
               </div>
             )}
             
@@ -185,9 +235,35 @@ export default function AreaSelectorToolbar({
       ) : (
         <div className="empty-selection-placeholder">
           <HelpCircle size={24} className="placeholder-icon" />
-          <span>No region selected yet. Choose a drawing tool above to select an area.</span>
+          <span>No region selected yet. Choose a drawing tool above to select an area or pick a preset below.</span>
         </div>
       )}
+
+      {/* Preset AOIs for Instant Testing */}
+      <div className="preset-aois-section">
+        <div className="subsection-title">
+          <Sparkles size={14} />
+          <h4>Quick Preset Areas (1-Click Test)</h4>
+        </div>
+        <div className="preset-aoi-list">
+          {PRESET_AOIS.map((aoi) => (
+            <div
+              key={aoi.id}
+              className="preset-aoi-card"
+              onClick={() => onSelectPresetAOI && onSelectPresetAOI(aoi)}
+            >
+              <div className="aoi-card-left">
+                <span className="aoi-badge">{aoi.type.toUpperCase()}</span>
+                <div className="aoi-info">
+                  <span className="aoi-title">{aoi.name}</span>
+                  <span className="aoi-area">{(aoi.areaHectares).toFixed(0)} ha ({formatArea(aoi.areaSqMeters).primary})</span>
+                </div>
+              </div>
+              <MousePointerClick size={16} className="aoi-select-icon" />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

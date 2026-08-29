@@ -77,7 +77,6 @@ export default function App() {
   // Handle Selections
   const handleSelectionChange = (newSelection) => {
     setActiveSelection(newSelection);
-    // Switch to Draw tab so the user can see stats immediately
     setActiveSidebarTab('draw');
   };
 
@@ -97,6 +96,20 @@ export default function App() {
       mapInstance.fitBounds(bounds, { padding: [50, 50] });
     } else if (activeSelection.type === 'point') {
       mapInstance.flyTo([activeSelection.lat, activeSelection.lon], 16);
+    }
+  };
+
+  const handleSelectPresetAOI = (aoi) => {
+    setActiveSelection(aoi);
+    setActiveDrawMode('pan');
+    setActiveSidebarTab('draw');
+
+    if (mapInstance) {
+      if (aoi.bbox) {
+        mapInstance.fitBounds([[aoi.bbox[0], aoi.bbox[1]], [aoi.bbox[2], aoi.bbox[3]]], { padding: [60, 60] });
+      } else if (aoi.points) {
+        mapInstance.fitBounds(L.latLngBounds(aoi.points), { padding: [60, 60] });
+      }
     }
   };
 
@@ -150,6 +163,7 @@ export default function App() {
           onClearSelection={handleClearSelection}
           onOpenPayloadModal={() => setIsPayloadModalOpen(true)}
           onFitSelection={handleFitSelection}
+          onSelectPresetAOI={handleSelectPresetAOI}
         />
 
         {/* Central Map Canvas */}
@@ -161,6 +175,7 @@ export default function App() {
             activeOverlays={activeOverlays}
             layerOpacity={layerOpacity}
             activeDrawMode={activeDrawMode}
+            onChangeDrawMode={setActiveDrawMode}
             activeSelection={activeSelection}
             onSelectionChange={handleSelectionChange}
             onCursorMove={setCursorCoords}
