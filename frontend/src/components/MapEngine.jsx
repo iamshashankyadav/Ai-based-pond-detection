@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { BASE_LAYERS, OVERLAYS } from './LayerControl';
-import { calculatePolygonArea, calculateBBoxArea, calculatePerimeter } from '../services/geoUtils';
+import { calculatePolygonArea, calculateBBoxArea, calculatePerimeter, formatArea } from '../services/geoUtils';
+import { Check, Undo2, X, Square, Hexagon, MapPin } from 'lucide-react';
 
 // Fix default Leaflet icon paths in Vite / React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -38,6 +39,7 @@ export default function MapEngine({
   activeOverlays = ['esri-places'],
   layerOpacity = 1.0,
   activeDrawMode = 'pan',
+  onChangeDrawMode,
   activeSelection,
   onSelectionChange,
   onCursorMove,
@@ -52,24 +54,32 @@ export default function MapEngine({
   const drawnItemsGroupRef = useRef(null);
   const tempDrawLayerRef = useRef(null);
 
-  // State for polygon drawing in progress
-  const polygonPointsRef = useRef([]);
-  const bboxStartPointRef = useRef(null);
-  const isDraggingBboxRef = useRef(false);
+  // Keep latest callback references in refs to prevent useEffect re-runs on parent renders
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  const onChangeDrawModeRef = useRef(onChangeDrawMode);
+  onSelectionChangeRef.current = onSelectionChange;
+  onChangeDrawModeRef.current = onChangeDrawMode;
 
-  // Initialize Map Once
+  // Drawing state tracked in state for UI display
+  const [polygonVertexCount, setPolygonVertexCount] = useState(0);
+  const [isBboxStarted, setIsBboxStarted] = useState(false);
+  const [provisionalArea, setProvisionalArea] = useState(null);
+
+  // Persistent in-memory drawing points across mousemove events
+  const drawingPointsRef = useRef([]);
+  const bboxStartPointRef = useRef(null);
+
+  // 1. Initialize Map Once
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
-    // Create Leaflet Map Instance
     const map = L.map(mapContainerRef.current, {
       center: center,
       zoom: zoom,
-      zoomControl: false, // We'll add custom positioned controls
+      zoomControl: false,
       attributionControl: true,
     });
 
-    // Add Zoom Control to Top Right
     L.control.zoom({ position: 'topright' }).addTo(map);
     L.control.scale({ position: 'bottomleft', imperial: false }).addTo(map);
 
@@ -105,14 +115,19 @@ export default function MapEngine({
     const drawnItems = L.featureGroup().addTo(map);
     drawnItemsGroupRef.current = drawnItems;
 
-    // Temporary layer for in-progress drawing
+    // Temporary layer for in-progress drawing preview
     const tempGroup = L.featureGroup().addTo(map);
     tempDrawLayerRef.current = tempGroup;
 
     // Map Event Listeners
+    let lastMoveTime = 0;
     map.on('mousemove', (e) => {
-      if (onCursorMove) {
-        onCursorMove({ lat: e.latlng.lat, lng: e.latlng.lng });
+      const now = performance.now();
+      if (now - lastMoveTime > 30) { // throttle HUD updates to 30ms
+        lastMoveTime = now;
+        if (onCursorMove) {
+          onCursorMove({ lat: e.latlng.lat, lng: e.latlng.lng });
+        }
       }
     });
 
@@ -129,18 +144,26 @@ export default function MapEngine({
       }
     });
 
+    // Prevent default browser text selection & image dragging on map container
+    const container = mapContainerRef.current;
+    const preventSelection = (e) => e.preventDefault();
+    container.addEventListener('selectstart', preventSelection);
+    container.addEventListener('dragstart', preventSelection);
+
     mapInstanceRef.current = map;
     if (registerMapInstance) {
       registerMapInstance(map);
     }
 
     return () => {
+      container.removeEventListener('selectstart', preventSelection);
+      container.removeEventListener('dragstart', preventSelection);
       map.remove();
       mapInstanceRef.current = null;
     };
-  }, []);
+  }, []); // Run only once on mount
 
-  // Update Base Layer when changed
+  // 2. Update Base Layer
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
@@ -159,7 +182,7 @@ export default function MapEngine({
     });
   }, [activeBaseLayerId]);
 
-  // Update Overlays
+  // 3. Update Overlays
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
@@ -175,7 +198,7 @@ export default function MapEngine({
     });
   }, [activeOverlays]);
 
-  // Update Opacity
+  // 4. Update Opacity
   useEffect(() => {
     Object.values(baseLayersRef.current).forEach((layer) => {
       if (layer && typeof layer.setOpacity === 'function') {
@@ -184,189 +207,363 @@ export default function MapEngine({
     });
   }, [layerOpacity]);
 
-  // Handle Interactive Drawing Modes
+  // 5. Finalize Polygon Selection
+  const finalizePolygon = () => {
+    const pts = drawingPointsRef.current;
+    if (!pts || pts.length < 3) return;
+
+    const areaM2 = calculatePolygonArea(pts);
+    const perimeterM = calculatePerimeter(pts);
+    
+    const latList = pts.map(p => p.lat);
+    const lngList = pts.map(p => p.lng);
+
+    const minLat = Math.min(...latList);
+    const maxLat = Math.max(...latList);
+    const minLng = Math.min(...lngList);
+    const maxLng = Math.max(...lngList);
+
+    const avgLat = latList.reduce((acc, v) => acc + v, 0) / latList.length;
+    const avgLng = lngList.reduce((acc, v) => acc + v, 0) / lngList.length;
+
+    const newSelection = {
+      type: 'polygon',
+      name: `Village Catchment Area (${pts.length} Vertices)`,
+      points: pts.map(p => [p.lat, p.lng]),
+      bbox: [minLat, minLng, maxLat, maxLng],
+      center: { lat: avgLat, lng: avgLng },
+      areaSqMeters: areaM2,
+      areaHectares: areaM2 / 10000,
+      perimeterMeters: perimeterM,
+    };
+
+    // Clean up drawing state
+    drawingPointsRef.current = [];
+    setPolygonVertexCount(0);
+    setProvisionalArea(null);
+    if (tempDrawLayerRef.current) tempDrawLayerRef.current.clearLayers();
+
+    if (onChangeDrawModeRef.current) onChangeDrawModeRef.current('pan');
+    if (onSelectionChangeRef.current) onSelectionChangeRef.current(newSelection);
+  };
+
+  // 6. Finalize Bounding Box Selection
+  const finalizeBBox = (startPt, endPt) => {
+    if (!startPt || !endPt) return;
+
+    const minLat = Math.min(startPt.lat, endPt.lat);
+    const maxLat = Math.max(startPt.lat, endPt.lat);
+    const minLng = Math.min(startPt.lng, endPt.lng);
+    const maxLng = Math.max(startPt.lng, endPt.lng);
+
+    if (Math.abs(maxLat - minLat) < 0.0002 && Math.abs(maxLng - minLng) < 0.0002) {
+      bboxStartPointRef.current = null;
+      setIsBboxStarted(false);
+      if (tempDrawLayerRef.current) tempDrawLayerRef.current.clearLayers();
+      return;
+    }
+
+    const bbox = [minLat, minLng, maxLat, maxLng];
+    const areaM2 = calculateBBoxArea(bbox);
+    const perimeterM = calculatePerimeter([
+      [minLat, minLng],
+      [maxLat, minLng],
+      [maxLat, maxLng],
+      [minLat, maxLng],
+    ]);
+    const center = { lat: (minLat + maxLat) / 2, lng: (minLng + maxLng) / 2 };
+
+    const widthKm = (Math.abs(maxLng - minLng) * 111.32 * Math.cos((center.lat * Math.PI) / 180)).toFixed(2);
+    const heightKm = (Math.abs(maxLat - minLat) * 110.57).toFixed(2);
+
+    const newSelection = {
+      type: 'bbox',
+      name: `Bounding Box (${widthKm} km × ${heightKm} km)`,
+      bbox: bbox,
+      points: [
+        [minLat, minLng],
+        [maxLat, minLng],
+        [maxLat, maxLng],
+        [minLat, maxLng],
+      ],
+      center: center,
+      areaSqMeters: areaM2,
+      areaHectares: areaM2 / 10000,
+      perimeterMeters: perimeterM,
+    };
+
+    bboxStartPointRef.current = null;
+    setIsBboxStarted(false);
+    setProvisionalArea(null);
+    if (tempDrawLayerRef.current) tempDrawLayerRef.current.clearLayers();
+
+    if (onChangeDrawModeRef.current) onChangeDrawModeRef.current('pan');
+    if (onSelectionChangeRef.current) onSelectionChangeRef.current(newSelection);
+  };
+
+  // 7. Render Polygon Temp Layer (both placed vertices and dynamic cursor rubberband)
+  const renderPolygonPreview = (cursorLatLng = null) => {
+    const tempGroup = tempDrawLayerRef.current;
+    if (!tempGroup) return;
+
+    tempGroup.clearLayers();
+    const pts = drawingPointsRef.current;
+    if (!pts || pts.length === 0) return;
+
+    // Render all placed vertex circles
+    pts.forEach((p, idx) => {
+      const isFirst = idx === 0;
+      L.circleMarker(p, {
+        radius: isFirst ? 7 : 5,
+        color: '#ffffff',
+        fillColor: isFirst ? '#10b981' : '#00f2fe',
+        fillOpacity: 1,
+        weight: 2,
+      }).addTo(tempGroup);
+    });
+
+    // Render solid line connecting placed points
+    if (pts.length >= 2) {
+      L.polyline(pts, {
+        color: '#10b981',
+        weight: 3,
+      }).addTo(tempGroup);
+    }
+
+    // Render dynamic rubberband guide line to current mouse position
+    if (cursorLatLng && pts.length > 0) {
+      const lastPt = pts[pts.length - 1];
+      L.polyline([lastPt, cursorLatLng], {
+        color: '#00f2fe',
+        weight: 2,
+        dashArray: '5, 5',
+      }).addTo(tempGroup);
+
+      // Shaded preview polygon if >= 2 points
+      if (pts.length >= 2) {
+        L.polygon([...pts, cursorLatLng], {
+          color: '#10b981',
+          weight: 1,
+          dashArray: '4, 4',
+          fillColor: '#10b981',
+          fillOpacity: 0.15,
+        }).addTo(tempGroup);
+      }
+    }
+  };
+
+  // 8. Render BBox Temp Layer
+  const renderBBoxPreview = (startPt, cursorPt) => {
+    const tempGroup = tempDrawLayerRef.current;
+    if (!tempGroup || !startPt) return;
+
+    tempGroup.clearLayers();
+
+    // Start corner marker
+    L.circleMarker(startPt, {
+      radius: 6,
+      color: '#ffffff',
+      fillColor: '#00f2fe',
+      fillOpacity: 1,
+      weight: 2,
+    }).addTo(tempGroup);
+
+    if (cursorPt) {
+      const bounds = L.latLngBounds(startPt, cursorPt);
+      L.rectangle(bounds, {
+        color: '#00f2fe',
+        weight: 2,
+        dashArray: '6, 6',
+        fillColor: '#00f2fe',
+        fillOpacity: 0.2,
+      }).addTo(tempGroup);
+    }
+  };
+
+  // 9. Drawing Event Listeners Effect - ONLY triggers when activeDrawMode changes
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    // Reset temporary layers and in-progress drawing states
-    polygonPointsRef.current = [];
+    // Reset any previous in-progress drawing when mode switches
+    drawingPointsRef.current = [];
     bboxStartPointRef.current = null;
-    isDraggingBboxRef.current = false;
-    if (tempDrawLayerRef.current) {
-      tempDrawLayerRef.current.clearLayers();
-    }
+    setPolygonVertexCount(0);
+    setIsBboxStarted(false);
+    setProvisionalArea(null);
+    if (tempDrawLayerRef.current) tempDrawLayerRef.current.clearLayers();
 
     if (activeDrawMode === 'pan') {
       map.dragging.enable();
+      map.doubleClickZoom.enable();
       map.getContainer().style.cursor = '';
       return;
     }
 
     map.getContainer().style.cursor = 'crosshair';
 
-    // Handler: Point / Candidate Pond Mode
-    const handleMapClickPoint = (e) => {
-      if (activeDrawMode !== 'point') return;
-      const lat = e.latlng.lat;
-      const lon = e.latlng.lng;
-
-      const newSelection = {
-        type: 'point',
-        name: `Candidate Pond (${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E)`,
-        lat: lat,
-        lon: lon,
-        center: { lat, lng: lon },
-      };
-
-      onSelectionChange(newSelection);
-    };
-
-    // Handler: Bounding Box (Click-and-Drag or 2-Click) Mode
-    const handleBBoxMouseDown = (e) => {
-      if (activeDrawMode !== 'bbox') return;
-      map.dragging.disable();
-      bboxStartPointRef.current = e.latlng;
-      isDraggingBboxRef.current = true;
-      tempDrawLayerRef.current.clearLayers();
-    };
-
-    const handleBBoxMouseMove = (e) => {
-      if (activeDrawMode !== 'bbox' || !isDraggingBboxRef.current || !bboxStartPointRef.current) return;
-      
-      const start = bboxStartPointRef.current;
-      const current = e.latlng;
-      
-      const bounds = L.latLngBounds(start, current);
-      tempDrawLayerRef.current.clearLayers();
-
-      const previewRect = L.rectangle(bounds, {
-        color: '#00f2fe',
-        weight: 2,
-        dashArray: '6, 6',
-        fillColor: '#00f2fe',
-        fillOpacity: 0.2,
-      }).addTo(tempDrawLayerRef.current);
-    };
-
-    const handleBBoxMouseUp = (e) => {
-      if (activeDrawMode !== 'bbox' || !isDraggingBboxRef.current || !bboxStartPointRef.current) return;
-      isDraggingBboxRef.current = false;
+    // --- POINT MODE ---
+    if (activeDrawMode === 'point') {
       map.dragging.enable();
 
-      const start = bboxStartPointRef.current;
-      const end = e.latlng;
+      const handlePointClick = (e) => {
+        const lat = e.latlng.lat;
+        const lon = e.latlng.lng;
 
-      const minLat = Math.min(start.lat, end.lat);
-      const maxLat = Math.max(start.lat, end.lat);
-      const minLng = Math.min(start.lng, end.lng);
-      const maxLng = Math.max(start.lng, end.lng);
+        const newSelection = {
+          type: 'point',
+          name: `Candidate Pond Site (${lat.toFixed(4)}°N, ${lon.toFixed(4)}°E)`,
+          lat: lat,
+          lon: lon,
+          center: { lat, lng: lon },
+          bbox: [lat - 0.005, lon - 0.005, lat + 0.005, lon + 0.005],
+          areaSqMeters: 2500,
+          areaHectares: 0.25,
+        };
 
-      // Check minimum drag distance
-      if (Math.abs(maxLat - minLat) < 0.0005 && Math.abs(maxLng - minLng) < 0.0005) {
-        tempDrawLayerRef.current.clearLayers();
-        return;
-      }
-
-      const bbox = [minLat, minLng, maxLat, maxLng];
-      const areaM2 = calculateBBoxArea(bbox);
-      const center = { lat: (minLat + maxLat) / 2, lng: (minLng + maxLng) / 2 };
-
-      const newSelection = {
-        type: 'bbox',
-        name: `BBox Region (${((maxLng - minLng) * 111).toFixed(1)}km x ${((maxLat - minLat) * 111).toFixed(1)}km)`,
-        bbox: bbox,
-        center: center,
-        areaSqMeters: areaM2,
-        areaHectares: areaM2 / 10000,
+        if (onChangeDrawModeRef.current) onChangeDrawModeRef.current('pan');
+        if (onSelectionChangeRef.current) onSelectionChangeRef.current(newSelection);
       };
 
-      tempDrawLayerRef.current.clearLayers();
-      onSelectionChange(newSelection);
-    };
-
-    // Handler: Polygon Mode (Click vertices)
-    const handlePolygonClick = (e) => {
-      if (activeDrawMode !== 'polygon') return;
-      const pt = e.latlng;
-      const points = [...polygonPointsRef.current, pt];
-      polygonPointsRef.current = points;
-
-      tempDrawLayerRef.current.clearLayers();
-
-      // Draw vertex markers
-      points.forEach((p, idx) => {
-        L.circleMarker(p, {
-          radius: 6,
-          color: '#ffffff',
-          fillColor: idx === 0 ? '#10b981' : '#00f2fe',
-          fillOpacity: 1,
-          weight: 2,
-        }).addTo(tempDrawLayerRef.current);
-      });
-
-      // Draw polyline connecting points
-      if (points.length >= 2) {
-        L.polyline(points, {
-          color: '#00f2fe',
-          weight: 2.5,
-          dashArray: '5, 5',
-        }).addTo(tempDrawLayerRef.current);
-      }
-    };
-
-    const handlePolygonDblClick = (e) => {
-      if (activeDrawMode !== 'polygon') return;
-      L.DomEvent.stopPropagation(e);
-      const points = polygonPointsRef.current;
-      if (points.length < 3) return;
-
-      const areaM2 = calculatePolygonArea(points);
-      const perimeterM = calculatePerimeter(points);
-      
-      const avgLat = points.reduce((acc, p) => acc + p.lat, 0) / points.length;
-      const avgLng = points.reduce((acc, p) => acc + p.lng, 0) / points.length;
-
-      const newSelection = {
-        type: 'polygon',
-        name: `Village Boundary (${points.length} vertices)`,
-        points: points.map(p => [p.lat, p.lng]),
-        center: { lat: avgLat, lng: avgLng },
-        areaSqMeters: areaM2,
-        areaHectares: areaM2 / 10000,
-        perimeterMeters: perimeterM,
+      map.on('click', handlePointClick);
+      return () => {
+        map.off('click', handlePointClick);
       };
-
-      polygonPointsRef.current = [];
-      tempDrawLayerRef.current.clearLayers();
-      onSelectionChange(newSelection);
-    };
-
-    if (activeDrawMode === 'point') {
-      map.on('click', handleMapClickPoint);
-    } else if (activeDrawMode === 'bbox') {
-      map.on('mousedown', handleBBoxMouseDown);
-      map.on('mousemove', handleBBoxMouseMove);
-      map.on('mouseup', handleBBoxMouseUp);
-    } else if (activeDrawMode === 'polygon') {
-      map.doubleClickZoom.disable();
-      map.on('click', handlePolygonClick);
-      map.on('dblclick', handlePolygonDblClick);
     }
 
-    return () => {
-      map.off('click', handleMapClickPoint);
-      map.off('mousedown', handleBBoxMouseDown);
-      map.off('mousemove', handleBBoxMouseMove);
-      map.off('mouseup', handleBBoxMouseUp);
-      map.off('click', handlePolygonClick);
-      map.off('dblclick', handlePolygonDblClick);
-      map.doubleClickZoom.enable();
-      map.dragging.enable();
-    };
-  }, [activeDrawMode, onSelectionChange]);
+    // --- BOUNDING BOX MODE ---
+    if (activeDrawMode === 'bbox') {
+      map.dragging.disable();
 
-  // Render Completed Selection Layer
+      const handleBBoxClick = (e) => {
+        if (!bboxStartPointRef.current) {
+          // First corner clicked
+          const start = e.latlng;
+          bboxStartPointRef.current = start;
+          setIsBboxStarted(true);
+          renderBBoxPreview(start, null);
+        } else {
+          // Second corner clicked -> Complete BBox
+          const start = bboxStartPointRef.current;
+          const end = e.latlng;
+          finalizeBBox(start, end);
+        }
+      };
+
+      const handleBBoxMouseMove = (e) => {
+        const start = bboxStartPointRef.current;
+        if (!start) return;
+
+        const current = e.latlng;
+        renderBBoxPreview(start, current);
+
+        const minLat = Math.min(start.lat, current.lat);
+        const maxLat = Math.max(start.lat, current.lat);
+        const minLng = Math.min(start.lng, current.lng);
+        const maxLng = Math.max(start.lng, current.lng);
+
+        const areaM2 = calculateBBoxArea([minLat, minLng, maxLat, maxLng]);
+        setProvisionalArea(formatArea(areaM2));
+      };
+
+      map.on('click', handleBBoxClick);
+      map.on('mousemove', handleBBoxMouseMove);
+
+      return () => {
+        map.off('click', handleBBoxClick);
+        map.off('mousemove', handleBBoxMouseMove);
+        map.dragging.enable();
+      };
+    }
+
+    // --- FREEFORM POLYGON MODE ---
+    if (activeDrawMode === 'polygon') {
+      map.doubleClickZoom.disable();
+      map.dragging.enable();
+
+      const handlePolygonClick = (e) => {
+        const pt = e.latlng;
+        const currentPoints = drawingPointsRef.current;
+
+        // If clicking close to the 1st vertex, close the polygon
+        if (currentPoints.length >= 3) {
+          const firstPt = currentPoints[0];
+          const dist = map.distance(firstPt, pt);
+          if (dist < 30) {
+            finalizePolygon();
+            return;
+          }
+        }
+
+        // Add new vertex point
+        currentPoints.push(pt);
+        setPolygonVertexCount(currentPoints.length);
+
+        if (currentPoints.length >= 3) {
+          const areaM2 = calculatePolygonArea(currentPoints);
+          setProvisionalArea(formatArea(areaM2));
+        }
+
+        renderPolygonPreview(pt);
+      };
+
+      const handlePolygonMouseMove = (e) => {
+        if (drawingPointsRef.current.length > 0) {
+          renderPolygonPreview(e.latlng);
+        }
+      };
+
+      const handlePolygonDblClick = (e) => {
+        L.DomEvent.stopPropagation(e);
+        if (drawingPointsRef.current.length >= 3) {
+          finalizePolygon();
+        }
+      };
+
+      map.on('click', handlePolygonClick);
+      map.on('mousemove', handlePolygonMouseMove);
+      map.on('dblclick', handlePolygonDblClick);
+
+      return () => {
+        map.off('click', handlePolygonClick);
+        map.off('mousemove', handlePolygonMouseMove);
+        map.off('dblclick', handlePolygonDblClick);
+        map.doubleClickZoom.enable();
+      };
+    }
+  }, [activeDrawMode]); // Depend strictly on activeDrawMode!
+
+  // Undo Last Polygon Point
+  const handleUndoPolygonPoint = () => {
+    if (drawingPointsRef.current.length <= 1) {
+      drawingPointsRef.current = [];
+      setPolygonVertexCount(0);
+      setProvisionalArea(null);
+      if (tempDrawLayerRef.current) tempDrawLayerRef.current.clearLayers();
+    } else {
+      drawingPointsRef.current.pop();
+      setPolygonVertexCount(drawingPointsRef.current.length);
+      if (drawingPointsRef.current.length >= 3) {
+        setProvisionalArea(formatArea(calculatePolygonArea(drawingPointsRef.current)));
+      } else {
+        setProvisionalArea(null);
+      }
+      renderPolygonPreview(null);
+    }
+  };
+
+  // Cancel Drawing
+  const handleCancelDrawing = () => {
+    drawingPointsRef.current = [];
+    bboxStartPointRef.current = null;
+    setPolygonVertexCount(0);
+    setIsBboxStarted(false);
+    setProvisionalArea(null);
+    if (tempDrawLayerRef.current) tempDrawLayerRef.current.clearLayers();
+    if (onChangeDrawModeRef.current) onChangeDrawModeRef.current('pan');
+  };
+
+  // 10. Render Completed Selection Layer
   useEffect(() => {
     const drawnItems = drawnItemsGroupRef.current;
     const map = mapInstanceRef.current;
@@ -383,12 +580,15 @@ export default function MapEngine({
         color: '#00f2fe',
         weight: 2.5,
         fillColor: '#00f2fe',
-        fillOpacity: 0.15,
+        fillOpacity: 0.18,
         className: 'glow-svg-rect',
       }).addTo(drawnItems);
 
       rect.bindTooltip(
-        `<strong>${activeSelection.name}</strong><br/>Area: ${(activeSelection.areaHectares || 0).toFixed(2)} ha`,
+        `<div class="gis-tooltip-content">
+          <strong>${activeSelection.name}</strong>
+          <span>Area: ${(activeSelection.areaHectares || 0).toFixed(2)} ha (${Math.round(activeSelection.areaSqMeters || 0).toLocaleString()} m²)</span>
+        </div>`,
         { permanent: true, direction: 'center', className: 'gis-map-tooltip' }
       );
     } else if (activeSelection.type === 'polygon' && activeSelection.points) {
@@ -396,12 +596,15 @@ export default function MapEngine({
         color: '#10b981',
         weight: 2.5,
         fillColor: '#10b981',
-        fillOpacity: 0.2,
+        fillOpacity: 0.22,
         className: 'glow-svg-polygon',
       }).addTo(drawnItems);
 
       poly.bindTooltip(
-        `<strong>${activeSelection.name}</strong><br/>Area: ${(activeSelection.areaHectares || 0).toFixed(2)} ha`,
+        `<div class="gis-tooltip-content">
+          <strong>${activeSelection.name}</strong>
+          <span>Area: ${(activeSelection.areaHectares || 0).toFixed(2)} ha (${Math.round(activeSelection.areaSqMeters || 0).toLocaleString()} m²)</span>
+        </div>`,
         { permanent: true, direction: 'center', className: 'gis-map-tooltip' }
       );
     } else if (activeSelection.type === 'point' && activeSelection.lat && activeSelection.lon) {
@@ -421,6 +624,61 @@ export default function MapEngine({
 
   return (
     <div className="map-engine-wrapper">
+      {/* Floating In-Map Active Drawing Controls Bar */}
+      {activeDrawMode !== 'pan' && (
+        <div className="map-active-draw-bar">
+          <div className="draw-bar-status">
+            {activeDrawMode === 'bbox' && <Square size={16} className="text-cyan animate-pulse" />}
+            {activeDrawMode === 'polygon' && <Hexagon size={16} className="text-emerald animate-pulse" />}
+            {activeDrawMode === 'point' && <MapPin size={16} className="text-cyan animate-pulse" />}
+
+            <div className="draw-bar-text">
+              <strong>
+                {activeDrawMode === 'bbox' && (isBboxStarted ? 'Click opposite corner to finish BBox' : 'Click 1st corner of Bounding Box')}
+                {activeDrawMode === 'polygon' && (polygonVertexCount === 0 ? 'Click map to place 1st vertex' : `Placed ${polygonVertexCount} vertex points`)}
+                {activeDrawMode === 'point' && 'Click anywhere to place Candidate Pond'}
+              </strong>
+              {provisionalArea && (
+                <span className="draw-bar-area">Live Area: {provisionalArea.hectares} ({provisionalArea.primary})</span>
+              )}
+            </div>
+          </div>
+
+          <div className="draw-bar-actions">
+            {activeDrawMode === 'polygon' && polygonVertexCount > 0 && (
+              <button 
+                className="draw-action-btn secondary"
+                onClick={handleUndoPolygonPoint}
+                title="Undo last vertex"
+              >
+                <Undo2 size={14} />
+                <span>Undo</span>
+              </button>
+            )}
+
+            {activeDrawMode === 'polygon' && polygonVertexCount >= 3 && (
+              <button 
+                className="draw-action-btn primary"
+                onClick={finalizePolygon}
+                title="Finish and save polygon"
+              >
+                <Check size={14} />
+                <span>Finish Polygon</span>
+              </button>
+            )}
+
+            <button 
+              className="draw-action-btn cancel"
+              onClick={handleCancelDrawing}
+              title="Cancel drawing"
+            >
+              <X size={14} />
+              <span>Cancel</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       <div id="gis-map-canvas" ref={mapContainerRef} className="gis-map-canvas" />
     </div>
   );
