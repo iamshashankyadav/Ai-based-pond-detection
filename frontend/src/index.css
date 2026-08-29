@@ -1023,19 +1023,30 @@ html, body, #root {
   position: relative;
   height: 100%;
   background: #090d16;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  touch-action: none;
 }
 
 .map-engine-wrapper {
   width: 100%;
   height: 100%;
   position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
 }
 
 .gis-map-canvas {
   width: 100%;
   height: 100%;
   background: #090d16;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
 }
+
 
 /* Leaflet Overrides */
 .leaflet-control-zoom {
@@ -1505,6 +1516,201 @@ html, body, #root {
   color: var(--accent-emerald);
 }
 
+/* --- Preset AOIs Section in Area Selector --- */
+.preset-aois-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.preset-aoi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preset-aoi-card {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.preset-aoi-card:hover {
+  border-color: var(--accent-cyan);
+  background: rgba(0, 242, 254, 0.06);
+  transform: translateX(2px);
+}
+
+.aoi-card-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.aoi-badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  background: rgba(0, 242, 254, 0.15);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(0, 242, 254, 0.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.aoi-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.aoi-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.aoi-area {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.aoi-select-icon {
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+
+.preset-aoi-card:hover .aoi-select-icon {
+  color: var(--accent-cyan);
+}
+
+/* --- In-Map Active Drawing Controls Bar --- */
+.map-active-draw-bar {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 20, 31, 0.92);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--accent-cyan);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 242, 254, 0.25);
+  border-radius: 30px;
+  padding: 6px 16px 6px 18px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  z-index: 1000;
+  animation: slideDownBar 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideDownBar {
+  from { transform: translate(-50%, -20px); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
+}
+
+.draw-bar-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.draw-bar-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.draw-bar-text strong {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.draw-bar-area {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent-emerald);
+  font-weight: 600;
+}
+
+.draw-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.draw-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s ease;
+}
+
+.draw-action-btn.primary {
+  background: var(--gradient-emerald);
+  color: white;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+}
+
+.draw-action-btn.primary:hover {
+  filter: brightness(1.15);
+  transform: scale(1.03);
+}
+
+.draw-action-btn.secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+}
+
+.draw-action-btn.secondary:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.draw-action-btn.cancel {
+  background: rgba(244, 63, 94, 0.15);
+  color: #fb7185;
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+.draw-action-btn.cancel:hover {
+  background: rgba(244, 63, 94, 0.3);
+}
+
+/* Tooltip Card Content */
+.gis-tooltip-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gis-tooltip-content strong {
+  color: var(--accent-cyan);
+  font-size: 12px;
+}
+
+.gis-tooltip-content span {
+  color: #ffffff;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
 /* --- Responsive Media Queries --- */
 @media (max-width: 900px) {
   .gis-sidebar.open {
@@ -1513,4 +1719,12 @@ html, body, #root {
   .brand-subtitle, .coords-text {
     display: none;
   }
+  .map-active-draw-bar {
+    width: 90%;
+    border-radius: 12px;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+  }
 }
+
