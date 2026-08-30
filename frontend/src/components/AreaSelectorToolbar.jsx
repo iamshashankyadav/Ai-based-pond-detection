@@ -72,7 +72,9 @@ export default function AreaSelectorToolbar({
   onClearSelection,
   onOpenPayloadModal,
   onFitSelection,
-  onSelectPresetAOI
+  onSelectPresetAOI,
+  onRunAnalysis,
+  analysisLoading
 }) {
   const formattedArea = activeSelection?.areaSqMeters
     ? formatArea(activeSelection.areaSqMeters)
