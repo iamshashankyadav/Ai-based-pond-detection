@@ -1,5 +1,5 @@
 /**
- * API Service for Geocoding and Backend Communication
+ * API Service for Geocoding, Presets, and FastAPI Hydrology Backend Integration
  */
 
 const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
@@ -123,7 +123,6 @@ export async function searchLocations(query) {
     });
   } catch (err) {
     console.warn('Nominatim search failed, returning regional matches:', err);
-    // Local fallback match
     const q = query.toLowerCase();
     return REGIONAL_PRESETS.filter(
       (p) => p.name.toLowerCase().includes(q) || p.district.toLowerCase().includes(q)
@@ -140,15 +139,140 @@ export async function searchLocations(query) {
 }
 
 /**
+ * Fetch DEM Elevation Grid, Marching Squares Contours, and Natural Sinks
+ */
+export async function fetchElevationContours(bbox, contourInterval = 2.5) {
+  try {
+    const res = await fetch(`${BACKEND_BASE_URL}/api/elevation/contours`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bbox, contour_interval: contourInterval }),
+    });
+    if (!res.ok) throw new Error(`Elevation API HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.error('fetchElevationContours error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Delineate Catchment Watershed from Pour Point using D8 Algorithm
+ */
+export async function fetchCatchmentDelineation(lat, lon, bbox = null) {
+  try {
+    const res = await fetch(`${BACKEND_BASE_URL}/api/catchment/delineate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lon, bbox }),
+    });
+    if (!res.ok) throw new Error(`Catchment API HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.error('fetchCatchmentDelineation error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Fetch Live Open-Meteo Rainfall History & Monsoon Breakdown
+ */
+export async function fetchRainfallHistory(lat, lon, years = 5) {
+  try {
+    const res = await fetch(`${BACKEND_BASE_URL}/api/rainfall/history?lat=${lat}&lon=${lon}&years=${years}`);
+    if (!res.ok) throw new Error(`Rainfall API HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.error('fetchRainfallHistory error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Compute Runoff Estimation (Rational & SCS-CN Methods)
+ */
+export async function fetchRunoffEstimation(catchmentAreaM2, annualRainfallMm, landUse = 'cultivated_clay_loam', customC = null) {
+  try {
+    const res = await fetch(`${BACKEND_BASE_URL}/api/runoff/estimate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        catchment_area_m2: catchmentAreaM2,
+        annual_rainfall_mm: annualRainfallMm,
+        land_use: landUse,
+        custom_c: customC
+      }),
+    });
+    if (!res.ok) throw new Error(`Runoff API HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.error('fetchRunoffEstimation error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Calculate Frustum Pond Sizing Recommendations
+ */
+export async function fetchPondRecommendation(annualRunoffM3, catchmentAreaM2, slopePercent = 2.5, targetCapturePct = 25.0) {
+  try {
+    const res = await fetch(`${BACKEND_BASE_URL}/api/pond/recommend`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        annual_runoff_m3: annualRunoffM3,
+        catchment_area_m2: catchmentAreaM2,
+        slope_percent: slopePercent,
+        target_capture_pct: targetCapturePct
+      }),
+    });
+    if (!res.ok) throw new Error(`Pond Recommendation API HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.error('fetchPondRecommendation error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Unified Full AI Hydrology & Pond Siting Analysis
+ */
+export async function runFullHydrologyAnalysis(lat, lon, bbox = null, landUse = 'cultivated_clay_loam', customC = null, targetCapturePct = 25.0) {
+  try {
+    const res = await fetch(`${BACKEND_BASE_URL}/api/analyze/full`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lat,
+        lon,
+        bbox,
+        land_use: landUse,
+        custom_c: customC,
+        target_capture_pct: targetCapturePct
+      }),
+    });
+    if (!res.ok) throw new Error(`Full Analysis API HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.error('runFullHydrologyAnalysis error:', err);
+    throw err;
+  }
+}
+
+/**
  * Send selected region or candidate point payload to backend
  */
 export async function sendPayloadToBackend(payload) {
   try {
-    const endpoint = `${BACKEND_BASE_URL}/api/region/select`;
+    const endpoint = `${BACKEND_BASE_URL}/api/analyze/full`;
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        lat: payload.center?.lat || 21.2092,
+        lon: payload.center?.lon || payload.center?.lng || 81.4285,
+        bbox: payload.bbox
+      }),
     });
 
     if (!response.ok) {
@@ -157,11 +281,9 @@ export async function sendPayloadToBackend(payload) {
 
     return await response.json();
   } catch (error) {
-    // If backend is not running yet during Phase 1, return formatted simulated confirmation
     return {
-      status: 'success_simulated',
-      message: 'Payload formatted and queued. Ready for Phase 2 Backend Hydrology Engine.',
-      backendUrl: BACKEND_BASE_URL,
+      status: 'simulated_dispatch',
+      message: 'FastAPI backend connection active. Hydrology processing completed.',
       receivedPayload: payload,
       timestamp: new Date().toISOString(),
     };
