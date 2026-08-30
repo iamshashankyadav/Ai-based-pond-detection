@@ -3,7 +3,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { BASE_LAYERS, OVERLAYS } from './LayerControl';
 import { calculatePolygonArea, calculateBBoxArea, calculatePerimeter, formatArea } from '../services/geoUtils';
-import { Check, Undo2, X, Square, Hexagon, MapPin } from 'lucide-react';
+import { Check, Undo2, X, Square, Hexagon, MapPin, Sparkles } from 'lucide-react';
 
 // Fix default Leaflet icon paths in Vite / React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -32,6 +32,19 @@ const pondMarkerIcon = L.divIcon({
   popupAnchor: [0, -40],
 });
 
+// Custom Natural Sink Marker Icon
+const createSinkIcon = (idx, score) => L.divIcon({
+  className: 'custom-sink-marker-pin',
+  html: `
+    <div class="sink-pin-badge">
+      <span class="sink-badge-rank">#${idx}</span>
+      <span class="sink-badge-score">${score}%</span>
+    </div>
+  `,
+  iconSize: [44, 24],
+  iconAnchor: [22, 12],
+});
+
 export default function MapEngine({
   center = [21.2092, 81.4285],
   zoom = 13,
@@ -45,16 +58,23 @@ export default function MapEngine({
   onCursorMove,
   onMapCenterChange,
   onZoomChange,
-  registerMapInstance
+  registerMapInstance,
+  analysisData,
+  activeHydrologyLayers = { contours: true, catchment: true, sinks: true, streams: true }
 }) {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const baseLayersRef = useRef({});
   const overlayLayersRef = useRef({});
+  
+  // Layer groups for selections & hydrology overlays
   const drawnItemsGroupRef = useRef(null);
   const tempDrawLayerRef = useRef(null);
+  const contoursLayerRef = useRef(null);
+  const catchmentLayerRef = useRef(null);
+  const sinksLayerRef = useRef(null);
 
-  // Keep latest callback references in refs to prevent useEffect re-runs on parent renders
+  // Keep latest callback references in refs to prevent useEffect re-runs
   const onSelectionChangeRef = useRef(onSelectionChange);
   const onChangeDrawModeRef = useRef(onChangeDrawMode);
   onSelectionChangeRef.current = onSelectionChange;
@@ -111,19 +131,18 @@ export default function MapEngine({
       }
     });
 
-    // Layer group for completed user selections
-    const drawnItems = L.featureGroup().addTo(map);
-    drawnItemsGroupRef.current = drawnItems;
-
-    // Temporary layer for in-progress drawing preview
-    const tempGroup = L.featureGroup().addTo(map);
-    tempDrawLayerRef.current = tempGroup;
+    // Layer groups
+    drawnItemsGroupRef.current = L.featureGroup().addTo(map);
+    tempDrawLayerRef.current = L.featureGroup().addTo(map);
+    contoursLayerRef.current = L.featureGroup().addTo(map);
+    catchmentLayerRef.current = L.featureGroup().addTo(map);
+    sinksLayerRef.current = L.featureGroup().addTo(map);
 
     // Map Event Listeners
     let lastMoveTime = 0;
     map.on('mousemove', (e) => {
       const now = performance.now();
-      if (now - lastMoveTime > 30) { // throttle HUD updates to 30ms
+      if (now - lastMoveTime > 30) {
         lastMoveTime = now;
         if (onCursorMove) {
           onCursorMove({ lat: e.latlng.lat, lng: e.latlng.lng });
@@ -144,7 +163,7 @@ export default function MapEngine({
       }
     });
 
-    // Prevent default browser text selection & image dragging on map container
+    // Prevent default browser text selection on map container
     const container = mapContainerRef.current;
     const preventSelection = (e) => e.preventDefault();
     container.addEventListener('selectstart', preventSelection);
@@ -161,7 +180,7 @@ export default function MapEngine({
       map.remove();
       mapInstanceRef.current = null;
     };
-  }, []); // Run only once on mount
+  }, []);
 
   // 2. Update Base Layer
   useEffect(() => {
@@ -237,7 +256,6 @@ export default function MapEngine({
       perimeterMeters: perimeterM,
     };
 
-    // Clean up drawing state
     drawingPointsRef.current = [];
     setPolygonVertexCount(0);
     setProvisionalArea(null);
@@ -301,7 +319,7 @@ export default function MapEngine({
     if (onSelectionChangeRef.current) onSelectionChangeRef.current(newSelection);
   };
 
-  // 7. Render Polygon Temp Layer (both placed vertices and dynamic cursor rubberband)
+  // 7. Render Polygon Temp Layer
   const renderPolygonPreview = (cursorLatLng = null) => {
     const tempGroup = tempDrawLayerRef.current;
     if (!tempGroup) return;
@@ -310,7 +328,6 @@ export default function MapEngine({
     const pts = drawingPointsRef.current;
     if (!pts || pts.length === 0) return;
 
-    // Render all placed vertex circles
     pts.forEach((p, idx) => {
       const isFirst = idx === 0;
       L.circleMarker(p, {
@@ -322,7 +339,6 @@ export default function MapEngine({
       }).addTo(tempGroup);
     });
 
-    // Render solid line connecting placed points
     if (pts.length >= 2) {
       L.polyline(pts, {
         color: '#10b981',
@@ -330,7 +346,6 @@ export default function MapEngine({
       }).addTo(tempGroup);
     }
 
-    // Render dynamic rubberband guide line to current mouse position
     if (cursorLatLng && pts.length > 0) {
       const lastPt = pts[pts.length - 1];
       L.polyline([lastPt, cursorLatLng], {
@@ -339,7 +354,6 @@ export default function MapEngine({
         dashArray: '5, 5',
       }).addTo(tempGroup);
 
-      // Shaded preview polygon if >= 2 points
       if (pts.length >= 2) {
         L.polygon([...pts, cursorLatLng], {
           color: '#10b981',
@@ -359,7 +373,6 @@ export default function MapEngine({
 
     tempGroup.clearLayers();
 
-    // Start corner marker
     L.circleMarker(startPt, {
       radius: 6,
       color: '#ffffff',
@@ -380,12 +393,11 @@ export default function MapEngine({
     }
   };
 
-  // 9. Drawing Event Listeners Effect - ONLY triggers when activeDrawMode changes
+  // 9. Drawing Event Listeners Effect
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    // Reset any previous in-progress drawing when mode switches
     drawingPointsRef.current = [];
     bboxStartPointRef.current = null;
     setPolygonVertexCount(0);
@@ -402,10 +414,9 @@ export default function MapEngine({
 
     map.getContainer().style.cursor = 'crosshair';
 
-    // --- POINT MODE ---
+    // Point Mode
     if (activeDrawMode === 'point') {
       map.dragging.enable();
-
       const handlePointClick = (e) => {
         const lat = e.latlng.lat;
         const lon = e.latlng.lng;
@@ -416,7 +427,7 @@ export default function MapEngine({
           lat: lat,
           lon: lon,
           center: { lat, lng: lon },
-          bbox: [lat - 0.005, lon - 0.005, lat + 0.005, lon + 0.005],
+          bbox: [lat - 0.008, lon - 0.008, lat + 0.008, lon + 0.008],
           areaSqMeters: 2500,
           areaHectares: 0.25,
         };
@@ -426,24 +437,20 @@ export default function MapEngine({
       };
 
       map.on('click', handlePointClick);
-      return () => {
-        map.off('click', handlePointClick);
-      };
+      return () => map.off('click', handlePointClick);
     }
 
-    // --- BOUNDING BOX MODE ---
+    // BBox Mode
     if (activeDrawMode === 'bbox') {
       map.dragging.disable();
 
       const handleBBoxClick = (e) => {
         if (!bboxStartPointRef.current) {
-          // First corner clicked
           const start = e.latlng;
           bboxStartPointRef.current = start;
           setIsBboxStarted(true);
           renderBBoxPreview(start, null);
         } else {
-          // Second corner clicked -> Complete BBox
           const start = bboxStartPointRef.current;
           const end = e.latlng;
           finalizeBBox(start, end);
@@ -476,7 +483,7 @@ export default function MapEngine({
       };
     }
 
-    // --- FREEFORM POLYGON MODE ---
+    // Polygon Mode
     if (activeDrawMode === 'polygon') {
       map.doubleClickZoom.disable();
       map.dragging.enable();
@@ -485,7 +492,6 @@ export default function MapEngine({
         const pt = e.latlng;
         const currentPoints = drawingPointsRef.current;
 
-        // If clicking close to the 1st vertex, close the polygon
         if (currentPoints.length >= 3) {
           const firstPt = currentPoints[0];
           const dist = map.distance(firstPt, pt);
@@ -495,7 +501,6 @@ export default function MapEngine({
           }
         }
 
-        // Add new vertex point
         currentPoints.push(pt);
         setPolygonVertexCount(currentPoints.length);
 
@@ -531,7 +536,7 @@ export default function MapEngine({
         map.doubleClickZoom.enable();
       };
     }
-  }, [activeDrawMode]); // Depend strictly on activeDrawMode!
+  }, [activeDrawMode]);
 
   // Undo Last Polygon Point
   const handleUndoPolygonPoint = () => {
@@ -563,7 +568,7 @@ export default function MapEngine({
     if (onChangeDrawModeRef.current) onChangeDrawModeRef.current('pan');
   };
 
-  // 10. Render Completed Selection Layer
+  // 10. Render Active Selection
   useEffect(() => {
     const drawnItems = drawnItemsGroupRef.current;
     const map = mapInstanceRef.current;
@@ -587,7 +592,7 @@ export default function MapEngine({
       rect.bindTooltip(
         `<div class="gis-tooltip-content">
           <strong>${activeSelection.name}</strong>
-          <span>Area: ${(activeSelection.areaHectares || 0).toFixed(2)} ha (${Math.round(activeSelection.areaSqMeters || 0).toLocaleString()} m²)</span>
+          <span>Area: ${(activeSelection.areaHectares || 0).toFixed(2)} ha</span>
         </div>`,
         { permanent: true, direction: 'center', className: 'gis-map-tooltip' }
       );
@@ -603,7 +608,7 @@ export default function MapEngine({
       poly.bindTooltip(
         `<div class="gis-tooltip-content">
           <strong>${activeSelection.name}</strong>
-          <span>Area: ${(activeSelection.areaHectares || 0).toFixed(2)} ha (${Math.round(activeSelection.areaSqMeters || 0).toLocaleString()} m²)</span>
+          <span>Area: ${(activeSelection.areaHectares || 0).toFixed(2)} ha</span>
         </div>`,
         { permanent: true, direction: 'center', className: 'gis-map-tooltip' }
       );
@@ -621,6 +626,94 @@ export default function MapEngine({
       ).openPopup();
     }
   }, [activeSelection]);
+
+  // 11. Render Hydrology Analysis Layers (Contours, Catchment Polygon, Sinks, Streams)
+  useEffect(() => {
+    const contoursGroup = contoursLayerRef.current;
+    const catchmentGroup = catchmentLayerRef.current;
+    const sinksGroup = sinksLayerRef.current;
+    const map = mapInstanceRef.current;
+    if (!map || !contoursGroup || !catchmentGroup || !sinksGroup) return;
+
+    contoursGroup.clearLayers();
+    catchmentGroup.clearLayers();
+    sinksGroup.clearLayers();
+
+    if (!analysisData) return;
+
+    // A. Render Elevation Contours
+    if (activeHydrologyLayers.contours && analysisData.elevation?.contours_geojson) {
+      const contours = analysisData.elevation.contours_geojson;
+      L.geoJSON(contours, {
+        style: (feature) => ({
+          color: feature.properties.color || '#facc15',
+          weight: feature.properties.weight || 1.5,
+          opacity: feature.properties.opacity || 0.75,
+          dashArray: feature.properties.is_index_contour ? '' : '3, 4',
+        }),
+        onEachFeature: (feature, layer) => {
+          layer.bindTooltip(
+            `Elevation: <strong>${feature.properties.level_label}</strong>`,
+            { sticky: true, className: 'gis-map-tooltip contour-tooltip' }
+          );
+        },
+      }).addTo(contoursGroup);
+    }
+
+    // B. Render Catchment Watershed Basin & Drainage Flow Vectors
+    if (activeHydrologyLayers.catchment && analysisData.catchment) {
+      const catchmentGeoJSON = analysisData.catchment;
+      L.geoJSON(catchmentGeoJSON, {
+        style: {
+          color: '#38bdf8',
+          weight: 3,
+          fillColor: '#0284c7',
+          fillOpacity: 0.28,
+          className: 'glow-svg-catchment',
+        },
+        onEachFeature: (feature, layer) => {
+          layer.bindTooltip(
+            `<div class="gis-tooltip-content">
+              <strong>${feature.properties.name}</strong>
+              <span>Area: ${feature.properties.area_hectares} ha &bull; Slope: ${feature.properties.avg_slope_percent}%</span>
+            </div>`,
+            { permanent: true, direction: 'center', className: 'gis-map-tooltip' }
+          );
+        },
+      }).addTo(catchmentGroup);
+
+      // Render Stream Network
+      if (catchmentGeoJSON.stream_network) {
+        L.geoJSON(catchmentGeoJSON.stream_network, {
+          style: {
+            color: '#00f2fe',
+            weight: 3.5,
+            dashArray: '6, 4',
+          },
+        }).addTo(catchmentGroup);
+      }
+    }
+
+    // C. Render Natural Sinks / Optimal Pond Depressions
+    if (activeHydrologyLayers.sinks && analysisData.elevation?.natural_sinks) {
+      const sinks = analysisData.elevation.natural_sinks;
+      sinks.forEach((sink, idx) => {
+        const marker = L.marker([sink.lat, sink.lon], {
+          icon: createSinkIcon(idx + 1, Math.round(sink.suitability_score)),
+        }).addTo(sinksGroup);
+
+        marker.bindPopup(
+          `<div class="gis-popup-card">
+            <h4>Optimal Depression Sink #${idx + 1}</h4>
+            <p>Score: <strong>${sink.suitability_score}%</strong></p>
+            <p>Elevation: ${sink.elevation_m}m &bull; Slope: ${sink.slope_percent}%</p>
+            <p>Natural Sink Depth: ${sink.depression_depth_m}m</p>
+            <div class="popup-tag">High Runoff Confluence</div>
+          </div>`
+        );
+      });
+    }
+  }, [analysisData, activeHydrologyLayers]);
 
   return (
     <div className="map-engine-wrapper">
