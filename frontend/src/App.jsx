@@ -1,10 +1,12 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import MapEngine from './components/MapEngine';
 import CoordinateHUD from './components/CoordinateHUD';
 import SelectionDetailsModal from './components/SelectionDetailsModal';
 import { BASE_LAYERS } from './components/LayerControl';
+import { runFullHydrologyAnalysis, fetchRunoffEstimation, fetchPondRecommendation } from './services/apiService';
+import confetti from 'canvas-confetti';
 import L from 'leaflet';
 
 const BHILAI_CENTER = { lat: 21.2092, lng: 81.4285 };
@@ -27,13 +29,23 @@ export default function App() {
   const [activeDrawMode, setActiveDrawMode] = useState('pan');
   const [activeSelection, setActiveSelection] = useState(null);
 
+  // Hydrology Analysis State
+  const [analysisData, setAnalysisData] = useState(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [activeHydrologyLayers, setActiveHydrologyLayers] = useState({
+    contours: true,
+    catchment: true,
+    sinks: true,
+    streams: true
+  });
+
   // UI Panel State
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeSidebarTab, setActiveSidebarTab] = useState('search');
   const [isPayloadModalOpen, setIsPayloadModalOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Handle Layer Selection
+  // Handle Base Layer Selection
   const handleSelectBaseLayer = (layerId) => {
     setActiveBaseLayerId(layerId);
   };
@@ -44,6 +56,81 @@ export default function App() {
         ? prev.filter((id) => id !== overlayId)
         : [...prev, overlayId]
     );
+  };
+
+  // Toggle Hydrology Map Overlays
+  const handleToggleHydrologyLayer = (layerKey) => {
+    setActiveHydrologyLayers((prev) => ({
+      ...prev,
+      [layerKey]: !prev[layerKey]
+    }));
+  };
+
+  // Run Full AI Hydrology Analysis
+  const handleRunAnalysis = async () => {
+    setAnalysisLoading(true);
+    try {
+      let lat = BHILAI_CENTER.lat;
+      let lon = BHILAI_CENTER.lng;
+      let bbox = null;
+
+      if (activeSelection) {
+        if (activeSelection.type === 'point') {
+          lat = activeSelection.lat;
+          lon = activeSelection.lon;
+          bbox = activeSelection.bbox;
+        } else if (activeSelection.type === 'bbox') {
+          lat = activeSelection.center?.lat || mapCenter.lat;
+          lon = activeSelection.center?.lng || mapCenter.lng;
+          bbox = activeSelection.bbox;
+        } else if (activeSelection.type === 'polygon') {
+          lat = activeSelection.center?.lat || mapCenter.lat;
+          lon = activeSelection.center?.lng || mapCenter.lng;
+          bbox = activeSelection.bbox;
+        }
+      } else {
+        lat = mapCenter.lat;
+        lon = mapCenter.lng;
+        bbox = [lat - 0.02, lon - 0.02, lat + 0.02, lon + 0.02];
+      }
+
+      const result = await runFullHydrologyAnalysis(lat, lon, bbox);
+      setAnalysisData(result);
+      setActiveSidebarTab('hydro');
+      if (!sidebarOpen) setSidebarOpen(true);
+
+      // Trigger celebratory confetti on completion
+      confetti({
+        particleCount: 80,
+        spread: 70,
+        origin: { y: 0.6 }
+      });
+    } catch (err) {
+      alert(`Hydrology Analysis notice: ${err.message || 'Please make sure FastAPI backend is running on port 8000.'}`);
+    } finally {
+      setAnalysisLoading(false);
+    }
+  };
+
+  // Dynamic Runoff Slider Re-calculation
+  const handleUpdateRunoffCoeff = async (newC) => {
+    if (!analysisData) return;
+    try {
+      const catchmentAreaM2 = analysisData.catchment.properties.area_sq_meters;
+      const annualRainfallMm = analysisData.rainfall.annual_rainfall_mm;
+      const slope = analysisData.catchment.properties.avg_slope_percent;
+
+      const newRunoff = await fetchRunoffEstimation(catchmentAreaM2, annualRainfallMm, 'cultivated_clay_loam', newC);
+      const newPond = await fetchPondRecommendation(newRunoff.annual_runoff_volume_m3, catchmentAreaM2, slope, 25.0);
+
+      setAnalysisData((prev) => ({
+        ...prev,
+        runoff: newRunoff,
+        pond_recommendation: newPond
+      }));
+    } catch (err) {
+      console.error('Error updating runoff coefficient:', err);
+    }
   };
 
   // Handle Map Navigation & Fly-To
@@ -164,6 +251,12 @@ export default function App() {
           onOpenPayloadModal={() => setIsPayloadModalOpen(true)}
           onFitSelection={handleFitSelection}
           onSelectPresetAOI={handleSelectPresetAOI}
+          analysisData={analysisData}
+          analysisLoading={analysisLoading}
+          onRunAnalysis={handleRunAnalysis}
+          activeHydrologyLayers={activeHydrologyLayers}
+          onToggleHydrologyLayer={handleToggleHydrologyLayer}
+          onUpdateRunoffCoeff={handleUpdateRunoffCoeff}
         />
 
         {/* Central Map Canvas */}
@@ -182,6 +275,8 @@ export default function App() {
             onMapCenterChange={setMapCenter}
             onZoomChange={setZoomLevel}
             registerMapInstance={setMapInstance}
+            analysisData={analysisData}
+            activeHydrologyLayers={activeHydrologyLayers}
           />
         </main>
       </div>
