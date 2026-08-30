@@ -4,11 +4,14 @@ import {
   Layers, 
   Square, 
   ChevronLeft, 
-  ChevronRight 
+  ChevronRight,
+  Droplets,
+  Sparkles
 } from 'lucide-react';
 import LocationSearch from './LocationSearch';
 import LayerControl from './LayerControl';
 import AreaSelectorToolbar from './AreaSelectorToolbar';
+import HydrologyDashboard from './HydrologyDashboard';
 
 export default function Sidebar({
   isOpen,
@@ -30,6 +33,12 @@ export default function Sidebar({
   onOpenPayloadModal,
   onFitSelection,
   onSelectPresetAOI,
+  analysisData,
+  analysisLoading,
+  onRunAnalysis,
+  activeHydrologyLayers,
+  onToggleHydrologyLayer,
+  onUpdateRunoffCoeff,
 }) {
   return (
     <aside className={`gis-sidebar ${isOpen ? 'open' : 'closed'}`}>
@@ -60,6 +69,16 @@ export default function Sidebar({
         >
           <Square size={18} />
           <span>Area AOI</span>
+        </button>
+
+        <button
+          className={`tab-strip-btn hydro-tab-trigger ${activeTab === 'hydro' ? 'active' : ''}`}
+          onClick={() => onChangeTab('hydro')}
+          title="AI Hydrology & Pond Siting"
+        >
+          <Droplets size={18} />
+          <span>Hydrology</span>
+          {analysisData && <span className="tab-dot" />}
         </button>
 
         <div className="tab-strip-spacer" />
@@ -103,6 +122,20 @@ export default function Sidebar({
               onOpenPayloadModal={onOpenPayloadModal}
               onFitSelection={onFitSelection}
               onSelectPresetAOI={onSelectPresetAOI}
+              onRunAnalysis={onRunAnalysis}
+              analysisLoading={analysisLoading}
+            />
+          )}
+
+          {activeTab === 'hydro' && (
+            <HydrologyDashboard
+              analysisData={analysisData}
+              loading={analysisLoading}
+              onRerunAnalysis={onRunAnalysis}
+              onFlyToLocation={onFlyToCoordinates}
+              activeHydrologyLayers={activeHydrologyLayers}
+              onToggleHydrologyLayer={onToggleHydrologyLayer}
+              onUpdateRunoffCoeff={onUpdateRunoffCoeff}
             />
           )}
         </div>
