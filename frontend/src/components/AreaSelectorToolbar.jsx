@@ -12,7 +12,8 @@ import {
   Crosshair,
   Maximize,
   Sparkles,
-  MousePointerClick
+  MousePointerClick,
+  Droplets
 } from 'lucide-react';
 import { formatArea } from '../services/geoUtils';
 
@@ -224,13 +225,24 @@ export default function AreaSelectorToolbar({
             </div>
           </div>
 
-          <button 
-            className="payload-trigger-btn"
-            onClick={onOpenPayloadModal}
-          >
-            <Send size={15} />
-            <span>Inspect Backend Payload & Export GeoJSON</span>
-          </button>
+          <div className="selection-action-buttons">
+            <button 
+              className="run-analysis-primary-btn"
+              onClick={onRunAnalysis}
+              disabled={analysisLoading}
+            >
+              <Droplets size={16} className={analysisLoading ? "animate-spin" : "animate-bounce"} />
+              <span>{analysisLoading ? 'Running AI Hydrology Analysis...' : 'Run AI Hydrological Analysis'}</span>
+            </button>
+
+            <button 
+              className="payload-trigger-btn secondary-style"
+              onClick={onOpenPayloadModal}
+            >
+              <Send size={14} />
+              <span>Inspect API Payload & GeoJSON</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="empty-selection-placeholder">
