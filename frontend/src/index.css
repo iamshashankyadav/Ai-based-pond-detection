@@ -1711,6 +1711,638 @@ html, body, #root {
   font-family: var(--font-mono);
 }
 
+/* --- Hydrology Action Buttons in Area Selector --- */
+.selection-action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.run-analysis-primary-btn {
+  background: var(--gradient-accent);
+  color: #07090e;
+  border: none;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0, 242, 254, 0.4);
+  transition: all 0.2s ease;
+}
+
+.run-analysis-primary-btn:hover:not(:disabled) {
+  filter: brightness(1.15);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 25px rgba(0, 242, 254, 0.55);
+}
+
+.run-analysis-primary-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.payload-trigger-btn.secondary-style {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  box-shadow: none;
+}
+
+.payload-trigger-btn.secondary-style:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.hydro-tab-trigger {
+  position: relative;
+}
+
+.tab-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  box-shadow: 0 0 8px var(--accent-cyan);
+}
+
+/* --- Hydrology Dashboard --- */
+.hydrology-dashboard-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dash-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dash-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dash-icon-box {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(0, 242, 254, 0.12);
+  border: 1px solid var(--border-active);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-cyan);
+}
+
+.dash-header-row h3 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.dash-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* Hydrology Overlays Bar */
+.hydro-layers-bar {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.layers-bar-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.hydro-layer-pill {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.hydro-layer-pill.active {
+  background: rgba(0, 242, 254, 0.15);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+/* Sub-Tab Navigation */
+.hydro-tab-strip {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 4px;
+  overflow-x: auto;
+}
+
+.hydro-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.hydro-tab:hover {
+  color: var(--text-primary);
+}
+
+.hydro-tab.active {
+  background: var(--bg-surface-elevated);
+  color: var(--accent-cyan);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.dash-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Overview KPIs */
+.overview-kpis-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.kpi-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.kpi-card.highlight-cyan {
+  border-color: var(--border-active);
+  background: rgba(0, 242, 254, 0.04);
+}
+
+.kpi-card.highlight-emerald {
+  border-color: var(--border-emerald);
+  background: rgba(16, 185, 129, 0.04);
+}
+
+.kpi-card.highlight-amber {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.04);
+}
+
+.kpi-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.kpi-value {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-top: 2px;
+}
+
+.kpi-card.highlight-cyan .kpi-value { color: var(--accent-cyan); }
+.kpi-card.highlight-emerald .kpi-value { color: var(--accent-emerald); }
+.kpi-card.highlight-amber .kpi-value { color: var(--accent-amber); }
+
+.kpi-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Community Impact Banner */
+.impact-banner {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-emerald);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.impact-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.impact-title-row h4 {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.impact-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.impact-stat {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+}
+
+.stat-num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-emerald);
+}
+
+.stat-desc {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Detail Section Cards */
+.detail-section-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-section-card h4 {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.specs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.spec-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 11px;
+}
+
+.spec-name {
+  color: var(--text-secondary);
+}
+
+.spec-val {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.spec-val.mono {
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.spec-val.highlight {
+  color: var(--accent-cyan);
+}
+
+/* Rainfall & Runoff */
+.rainfall-summary-box {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.rainfall-kpi {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.rf-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.rf-val {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-top: 2px;
+}
+
+.rf-source {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.monthly-chart-container {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.monthly-chart-container h4 {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.bar-chart-wrapper {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 110px;
+  padding-top: 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.bar-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.bar-val {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.chart-bar {
+  width: 100%;
+  background: rgba(0, 242, 254, 0.4);
+  border-radius: 3px 3px 0 0;
+  transition: height 0.4s ease;
+}
+
+.chart-bar.monsoon {
+  background: var(--gradient-accent);
+}
+
+.bar-label {
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.runoff-slider-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.slider-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.slider-label-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.slider-label-group h4 {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.slider-value-pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  background: rgba(0, 242, 254, 0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.c-slider {
+  width: 100%;
+  accent-color: var(--accent-cyan);
+  height: 6px;
+  background: var(--bg-surface-elevated);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.slider-benchmarks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+/* Sinks List */
+.sinks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sink-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sink-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sink-rank {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  background: rgba(0, 242, 254, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.sink-score {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-emerald);
+}
+
+.sink-metrics {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.sink-fly-btn {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--accent-cyan);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sink-fly-btn:hover {
+  background: rgba(0, 242, 254, 0.1);
+  border-color: var(--accent-cyan);
+}
+
+/* Sink Map Icon */
+.custom-sink-marker-pin {
+  background: transparent;
+  border: none;
+}
+
+.sink-pin-badge {
+  background: rgba(7, 9, 14, 0.9);
+  border: 1.5px solid #00f2fe;
+  box-shadow: 0 0 10px rgba(0, 242, 254, 0.5);
+  border-radius: 12px;
+  padding: 2px 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sink-badge-rank {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  color: #00f2fe;
+}
+
+.sink-badge-score {
+  font-size: 9px;
+  font-weight: 700;
+  color: #10b981;
+}
+
+/* Glow Catchment Boundary */
+.glow-svg-catchment {
+  filter: drop-shadow(0 0 10px rgba(2, 132, 199, 0.75));
+}
+
+.contour-tooltip {
+  font-size: 10px !important;
+  padding: 2px 6px !important;
+}
+
+/* Empty & Loading States */
+.hydrology-loading-card, .hydrology-empty-card {
+  background: var(--bg-surface);
+  border: 1px dashed var(--border-subtle);
+  border-radius: 10px;
+  padding: 28px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+}
+
+.loading-spinner-wrapper {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(0, 242, 254, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hydrology-loading-card h4, .hydrology-empty-card h4 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.loading-sub, .hydrology-empty-card p {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
 /* --- Responsive Media Queries --- */
 @media (max-width: 900px) {
   .gis-sidebar.open {
@@ -1727,4 +2359,5 @@ html, body, #root {
     padding: 10px;
   }
 }
+
 
