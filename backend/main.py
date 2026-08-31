@@ -1,5 +1,6 @@
+import os
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
@@ -8,11 +9,12 @@ from services.elevation_service import elevation_service
 from services.hydrology_service import hydrology_service
 from services.rainfall_service import rainfall_service
 from services.runoff_pond_service import runoff_pond_service
+from services.kml_service import kml_contour_service
 
 app = FastAPI(
     title="AI Village Pond Detection & Hydrology Siting API",
-    description="FastAPI Backend for DEM elevation contours, D8 catchment delineation, Open-Meteo rainfall, runoff modeling, and pond sizing recommendations.",
-    version="1.0.0"
+    description="FastAPI Backend for KML/KMZ Contour Analysis, DEM elevation generation, D8 catchment delineation, Open-Meteo rainfall, runoff modeling, and pond sizing recommendations.",
+    version="1.1.0"
 )
 
 # Enable CORS for frontend Vite development server and all origins
@@ -55,6 +57,12 @@ class FullAnalysisRequest(BaseModel):
     custom_c: Optional[float] = None
     target_capture_pct: Optional[float] = 25.0
 
+class KMLFilePathRequest(BaseModel):
+    file_path: str = Field(..., description="Absolute or relative path to the KML or KMZ file on disk")
+    pour_lat: Optional[float] = Field(None, description="Optional custom pond pour point latitude")
+    pour_lon: Optional[float] = Field(None, description="Optional custom pond pour point longitude")
+    target_capture_pct: Optional[float] = Field(25.0, description="Target runoff capture percentage")
+
 
 # --- Endpoints ---
 
@@ -64,6 +72,12 @@ def root():
         "status": "online",
         "service": "AI Village Pond Detection & Hydrology GIS Engine",
         "region_focus": "Bhilai / Chhattisgarh Basin (21.2092° N, 81.4285° E)",
+        "features": [
+            "KML / KMZ Contour Map Analysis & DEM Rasterization",
+            "D8 Catchment Basin Delineation",
+            "Open-Meteo Historical Weather Integration",
+            "Frustum Pond Sizing & Community Water Security"
+        ],
         "docs_url": "/docs"
     }
 
@@ -73,8 +87,69 @@ def health_check():
         "status": "healthy",
         "engine": "FastAPI Hydrology & Elevation Core",
         "d8_algorithm": "active",
+        "kml_kmz_parser": "active",
         "open_meteo_client": "active"
     }
+
+# --- KML / KMZ Contour Map Analysis Endpoints ---
+
+@app.post("/api/kml/upload")
+async def upload_and_analyze_kml(
+    file: UploadFile = File(..., description="Upload .kml or .kmz contour file"),
+    pour_lat: Optional[float] = Form(None, description="Optional custom pond pour point latitude"),
+    pour_lon: Optional[float] = Form(None, description="Optional custom pond pour point longitude"),
+    target_capture_pct: Optional[float] = Form(25.0, description="Target runoff capture percentage")
+):
+    """
+    Accepts a contour map (in KML/KMZ format), extracts all contour vector levels,
+    interpolates the DEM elevation raster, delineates the upstream D8 catchment basin,
+    fetches live rainfall, and generates pond sizing recommendations.
+    """
+    filename = file.filename or "contour.kml"
+    if not (filename.lower().endswith('.kml') or filename.lower().endswith('.kmz')):
+        raise HTTPException(status_code=400, detail="Uploaded file must be a .kml or .kmz contour map.")
+
+    try:
+        content = await file.read()
+        analysis = await kml_contour_service.analyze_kml_file(
+            file_bytes=content,
+            filename=filename,
+            pour_lat=pour_lat,
+            pour_lon=pour_lon,
+            target_capture_pct=target_capture_pct or 25.0
+        )
+        return analysis
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing KML/KMZ contour map: {str(e)}")
+
+@app.post("/api/kml/analyze-file")
+async def analyze_kml_file_path(req: KMLFilePathRequest):
+    """
+    Analyzes an existing KML or KMZ contour map file on disk.
+    Example: { "file_path": "d:/projects/Ai-based-pond-detection/contours_1m.kml" }
+    """
+    normalized_path = os.path.abspath(req.file_path)
+    if not os.path.exists(normalized_path):
+        raise HTTPException(status_code=404, detail=f"File not found on disk at: {normalized_path}")
+
+    try:
+        with open(normalized_path, "rb") as f:
+            content = f.read()
+
+        filename = os.path.basename(normalized_path)
+        analysis = await kml_contour_service.analyze_kml_file(
+            file_bytes=content,
+            filename=filename,
+            pour_lat=req.pour_lat,
+            pour_lon=req.pour_lon,
+            target_capture_pct=req.target_capture_pct or 25.0
+        )
+        return analysis
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing KML contour file: {str(e)}")
+
+
+# --- Standard Geospatial & Hydrology Endpoints ---
 
 @app.post("/api/elevation/contours")
 async def get_elevation_and_contours(req: BBoxRequest):
@@ -122,7 +197,6 @@ async def delineate_catchment(req: CatchmentRequest):
     Runs D8 flow direction and accumulation algorithm to delineate
     the upstream drainage catchment basin for a candidate pond pour point.
     """
-    # If bbox not supplied, generate a 2.5km neighborhood bounding box around pour point
     if req.bbox and len(req.bbox) == 4:
         min_lat, min_lon, max_lat, max_lon = req.bbox
     else:
