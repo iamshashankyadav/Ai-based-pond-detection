@@ -89,7 +89,7 @@ export async function searchLocations(query) {
   try {
     const encoded = encodeURIComponent(query.trim());
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encoded}&countrycodes=in&limit=6&addressdetails=1`;
-    
+
     const response = await fetch(url, {
       headers: {
         'Accept-Language': 'en',
@@ -260,6 +260,58 @@ export async function runFullHydrologyAnalysis(lat, lon, bbox = null, landUse = 
 }
 
 /**
+ * Upload and analyze KML/KMZ contour file
+ */
+export async function uploadKmlContourFile(file, pourLat = null, pourLon = null, targetCapturePct = 25.0) {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (pourLat !== null) formData.append('pour_lat', pourLat);
+    if (pourLon !== null) formData.append('pour_lon', pourLon);
+    formData.append('target_capture_pct', targetCapturePct);
+
+    const res = await fetch(`${BACKEND_BASE_URL}/api/kml/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || `KML Upload HTTP ${res.status}`);
+    }
+    return await res.json();
+  } catch (err) {
+    console.error('uploadKmlContourFile error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Analyze existing KML file path on server
+ */
+export async function analyzeKmlFilePath(filePath, pourLat = null, pourLon = null, targetCapturePct = 25.0) {
+  try {
+    const res = await fetch(`${BACKEND_BASE_URL}/api/kml/analyze-file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        file_path: filePath,
+        pour_lat: pourLat,
+        pour_lon: pourLon,
+        target_capture_pct: targetCapturePct
+      }),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || `KML Analysis HTTP ${res.status}`);
+    }
+    return await res.json();
+  } catch (err) {
+    console.error('analyzeKmlFilePath error:', err);
+    throw err;
+  }
+}
+
+/**
  * Send selected region or candidate point payload to backend
  */
 export async function sendPayloadToBackend(payload) {
@@ -289,3 +341,4 @@ export async function sendPayloadToBackend(payload) {
     };
   }
 }
+

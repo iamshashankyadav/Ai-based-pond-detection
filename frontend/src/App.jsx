@@ -5,7 +5,7 @@ import MapEngine from './components/MapEngine';
 import CoordinateHUD from './components/CoordinateHUD';
 import SelectionDetailsModal from './components/SelectionDetailsModal';
 import { BASE_LAYERS } from './components/LayerControl';
-import { runFullHydrologyAnalysis, fetchRunoffEstimation, fetchPondRecommendation } from './services/apiService';
+import { runFullHydrologyAnalysis, fetchRunoffEstimation, fetchPondRecommendation, uploadKmlContourFile } from './services/apiService';
 import confetti from 'canvas-confetti';
 import L from 'leaflet';
 
@@ -133,6 +133,33 @@ export default function App() {
     }
   };
 
+  // Upload and analyze KML / KMZ contour map file
+  const handleUploadKmlFile = async (file) => {
+    setAnalysisLoading(true);
+    try {
+      const result = await uploadKmlContourFile(file);
+      setAnalysisData(result);
+      setActiveSidebarTab('hydro');
+      if (!sidebarOpen) setSidebarOpen(true);
+
+      // Fit map view to the uploaded KML bounding box
+      if (mapInstance && result.file_info?.bbox) {
+        const [minLat, minLon, maxLat, maxLon] = result.file_info.bbox;
+        mapInstance.fitBounds([[minLat, minLon], [maxLat, maxLon]], { padding: [50, 50] });
+      }
+
+      confetti({
+        particleCount: 100,
+        spread: 80,
+        origin: { y: 0.6 }
+      });
+    } catch (err) {
+      alert(`KML Analysis notice: ${err.message || 'Error processing KML contour file'}`);
+    } finally {
+      setAnalysisLoading(false);
+    }
+  };
+
   // Handle Map Navigation & Fly-To
   const handleSelectLocation = (loc) => {
     if (!mapInstance) return;
@@ -257,6 +284,7 @@ export default function App() {
           activeHydrologyLayers={activeHydrologyLayers}
           onToggleHydrologyLayer={handleToggleHydrologyLayer}
           onUpdateRunoffCoeff={handleUpdateRunoffCoeff}
+          onUploadKmlFile={handleUploadKmlFile}
         />
 
         {/* Central Map Canvas */}

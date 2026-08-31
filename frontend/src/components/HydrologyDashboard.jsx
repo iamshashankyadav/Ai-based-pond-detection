@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Droplets, 
   Mountain, 
@@ -13,7 +13,9 @@ import {
   Activity,
   Users,
   Shield,
-  Maximize2
+  Maximize2,
+  Upload,
+  FileUp
 } from 'lucide-react';
 import { formatArea } from '../services/geoUtils';
 
@@ -25,9 +27,18 @@ export default function HydrologyDashboard({
   activeHydrologyLayers,
   onToggleHydrologyLayer,
   onUpdateRunoffCoeff,
+  onUploadKmlFile,
 }) {
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'catchment' | 'rainfall' | 'pond' | 'sinks'
   const [customC, setCustomC] = useState(0.35);
+  const fileInputRef = useRef(null);
+
+  const handleFileInput = (e) => {
+    const file = e.target.files?.[0];
+    if (file && onUploadKmlFile) {
+      onUploadKmlFile(file);
+    }
+  };
 
   if (loading) {
     return (
@@ -51,6 +62,21 @@ export default function HydrologyDashboard({
         <p>
           Select an Area of Interest (BBox / Polygon) or click a Candidate Pond point on the map, then click <strong>"Run AI Hydrology Analysis"</strong>.
         </p>
+
+        <div className="kml-upload-dropzone" onClick={() => fileInputRef.current?.click()}>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileInput}
+            accept=".kml,.kmz"
+            style={{ display: 'none' }}
+          />
+          <FileUp size={22} className="text-cyan" />
+          <div className="dropzone-text">
+            <strong>Upload Contour Map (.KML / .KMZ)</strong>
+            <span>Directly analyze contours_1m.kml & delineate pond catchment</span>
+          </div>
+        </div>
       </div>
     );
   }

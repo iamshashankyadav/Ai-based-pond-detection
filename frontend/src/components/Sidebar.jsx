@@ -39,6 +39,7 @@ export default function Sidebar({
   activeHydrologyLayers,
   onToggleHydrologyLayer,
   onUpdateRunoffCoeff,
+  onUploadKmlFile,
 }) {
   return (
     <aside className={`gis-sidebar ${isOpen ? 'open' : 'closed'}`}>
@@ -136,6 +137,7 @@ export default function Sidebar({
               activeHydrologyLayers={activeHydrologyLayers}
               onToggleHydrologyLayer={onToggleHydrologyLayer}
               onUpdateRunoffCoeff={onUpdateRunoffCoeff}
+              onUploadKmlFile={onUploadKmlFile}
             />
           )}
         </div>

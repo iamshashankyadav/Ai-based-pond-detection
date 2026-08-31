@@ -2343,6 +2343,44 @@ html, body, #root {
   line-height: 1.5;
 }
 
+/* KML Upload Dropzone */
+.kml-upload-dropzone {
+  width: 100%;
+  margin-top: 10px;
+  padding: 14px 12px;
+  background: var(--bg-surface-elevated);
+  border: 1.5px dashed var(--border-active);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.kml-upload-dropzone:hover {
+  background: rgba(0, 242, 254, 0.08);
+  border-color: var(--accent-cyan);
+  transform: translateY(-1px);
+}
+
+.dropzone-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dropzone-text strong {
+  font-size: 11px;
+  color: var(--accent-cyan);
+}
+
+.dropzone-text span {
+  font-size: 9.5px;
+  color: var(--text-muted);
+}
+
 /* --- Responsive Media Queries --- */
 @media (max-width: 900px) {
   .gis-sidebar.open {
