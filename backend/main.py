@@ -93,9 +93,10 @@ def health_check():
 
 # --- KML / KMZ Contour Map Analysis Endpoints ---
 
-@app.post("/api/kml/upload")
+@app.post("/api/kml/analyzeContour")
 async def upload_and_analyze_kml(
-    file: UploadFile = File(..., description="Upload .kml or .kmz contour file"),
+    contour_map: Optional[UploadFile] = File(None),
+    file: Optional[UploadFile] = File(None),
     pour_lat: Optional[float] = Form(None, description="Optional custom pond pour point latitude"),
     pour_lon: Optional[float] = Form(None, description="Optional custom pond pour point longitude"),
     target_capture_pct: Optional[float] = Form(25.0, description="Target runoff capture percentage")
@@ -105,12 +106,16 @@ async def upload_and_analyze_kml(
     interpolates the DEM elevation raster, delineates the upstream D8 catchment basin,
     fetches live rainfall, and generates pond sizing recommendations.
     """
-    filename = file.filename or "contour.kml"
+    uploaded_file = contour_map or file
+    if not uploaded_file:
+        raise HTTPException(status_code=400, detail="Please upload a KML file under 'contour_map' or 'file'")
+
+    filename = uploaded_file.filename or "contour.kml"
     if not (filename.lower().endswith('.kml') or filename.lower().endswith('.kmz')):
         raise HTTPException(status_code=400, detail="Uploaded file must be a .kml or .kmz contour map.")
 
     try:
-        content = await file.read()
+        content = await uploaded_file.read()
         analysis = await kml_contour_service.analyze_kml_file(
             file_bytes=content,
             filename=filename,
