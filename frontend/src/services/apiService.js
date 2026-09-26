@@ -2,7 +2,7 @@
  * API Service for Geocoding, Presets, and FastAPI Hydrology Backend Integration
  */
 
-const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://10.1.75.79:4202';
 
 // Chhattisgarh & Bhilai Region Quick Presets
 export const REGIONAL_PRESETS = [
@@ -270,7 +270,7 @@ export async function uploadKmlContourFile(file, pourLat = null, pourLon = null,
     if (pourLon !== null) formData.append('pour_lon', pourLon);
     formData.append('target_capture_pct', targetCapturePct);
 
-    const res = await fetch(`${BACKEND_BASE_URL}/api/kml/upload`, {
+    const res = await fetch(`${BACKEND_BASE_URL}/api/kml/analyzeContour`, {
       method: 'POST',
       body: formData,
     });
