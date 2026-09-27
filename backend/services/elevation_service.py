@@ -1,16 +1,144 @@
-import numpy as np
-import httpx
-from typing import List, Dict, Any, Tuple, Optional
+import os
 import math
+import logging
+from pathlib import Path
+from typing import List, Dict, Any, Tuple, Optional
 
-# Chhattisgarh baseline elevation range (m above sea level)
+import httpx
+import numpy as np
+from dotenv import load_dotenv
+
+# Load .env from project root or current working directory
+load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+load_dotenv()
+
+logger = logging.getLogger("elevation_service")
+
+# Chhattisgarh baseline elevation range (m above sea level) fallback
 BASE_ELEVATION_BHILAI = 295.0
+OPENTOPOGRAPHY_API_URL = "https://portal.opentopography.org/API/globaldem"
 
 class ElevationService:
     def __init__(self):
-        self.client = httpx.AsyncClient(timeout=10.0)
+        self.api_key = os.getenv("OPENTOPOGRAPHY_API_KEY", "").strip()
+        self.client = httpx.AsyncClient(timeout=30.0)
 
     async def get_elevation_grid(
+        self,
+        min_lat: float,
+        min_lon: float,
+        max_lat: float,
+        max_lon: float,
+        grid_size: Optional[int] = None,
+        dataset: str = "SRTMGL1"
+    ) -> Dict[str, Any]:
+        """
+        Fetches real DEM elevation raster from OpenTopography API (SRTM 30m / COP30).
+        Falls back to regional topographic model if the API is offline or key is missing.
+        """
+        api_key = os.getenv("OPENTOPOGRAPHY_API_KEY", self.api_key).strip()
+
+        if api_key:
+            try:
+                return await self._fetch_opentopography_grid(
+                    min_lat=min_lat,
+                    min_lon=min_lon,
+                    max_lat=max_lat,
+                    max_lon=max_lon,
+                    api_key=api_key,
+                    dataset=dataset
+                )
+            except Exception as e:
+                logger.warning(f"Failed to fetch DEM from OpenTopography: {e}. Falling back to synthetic DEM.")
+        else:
+            logger.warning("OPENTOPOGRAPHY_API_KEY not configured. Falling back to synthetic DEM.")
+
+        return self._generate_synthetic_grid(min_lat, min_lon, max_lat, max_lon, grid_size=grid_size or 50)
+
+    async def _fetch_opentopography_grid(
+        self,
+        min_lat: float,
+        min_lon: float,
+        max_lat: float,
+        max_lon: float,
+        api_key: str,
+        dataset: str = "SRTMGL1"
+    ) -> Dict[str, Any]:
+        import rasterio
+        from rasterio.io import MemoryFile
+
+        params = {
+            "demtype": dataset,
+            "south": min_lat,
+            "north": max_lat,
+            "west": min_lon,
+            "east": max_lon,
+            "outputFormat": "GTiff",
+            "API_Key": api_key,
+        }
+
+        resp = await self.client.get(OPENTOPOGRAPHY_API_URL, params=params)
+        resp.raise_for_status()
+
+        if resp.headers.get("content-type", "").startswith("application/json"):
+            raise RuntimeError(f"OpenTopography API returned error: {resp.text[:300]}")
+
+        with MemoryFile(resp.content) as memfile:
+            with memfile.open() as src:
+                elev = src.read(1).astype(np.float64)
+                nodata = src.nodata
+                if nodata is not None:
+                    elev[elev == nodata] = np.nan
+                height, width = elev.shape
+                transform = src.transform
+                xs = np.arange(width)
+                ys = np.arange(height)
+                lons = transform.c + xs * transform.a
+                lats = transform.f + ys * transform.e  # negative step, north -> south
+
+        # Flip so row 0 = south, matching standard np.linspace(min_lat, max_lat) grid
+        elev = np.flipud(elev)
+        lats = lats[::-1]
+
+        # Handle any NaN/nodata cells using nearest-neighbor fill
+        if np.isnan(elev).any():
+            from scipy import ndimage
+            mask = np.isnan(elev)
+            if mask.all():
+                raise RuntimeError("OpenTopography returned all NaN values for requested bounding box.")
+            idx = ndimage.distance_transform_edt(mask, return_distances=False, return_indices=True)
+            elev = elev[tuple(idx)]
+
+        # Calculate slope grid (in percentage)
+        dx = abs(lons[1] - lons[0]) * 105000.0 if len(lons) > 1 else 30.0
+        dy = abs(lats[1] - lats[0]) * 111000.0 if len(lats) > 1 else 30.0
+
+        gy, gx = np.gradient(elev, dy, dx)
+        slope_grid = np.sqrt(gx ** 2 + gy ** 2) * 100.0
+
+        min_elev = float(np.nanmin(elev))
+        max_elev = float(np.nanmax(elev))
+        mean_elev = float(np.nanmean(elev))
+
+        return {
+            "lats": lats.tolist(),
+            "lons": lons.tolist(),
+            "elevation_grid": np.round(elev, 2).tolist(),
+            "slope_grid": np.round(slope_grid, 2).tolist(),
+            "stats": {
+                "min_elevation_m": round(min_elev, 2),
+                "max_elevation_m": round(max_elev, 2),
+                "mean_elevation_m": round(mean_elev, 2),
+                "relief_m": round(max_elev - min_elev, 2),
+                "avg_slope_percent": round(float(np.nanmean(slope_grid)), 2),
+                "grid_resolution_m": round(float(dx), 1),
+                "grid_shape": list(elev.shape),
+                "data_source": f"OpenTopography ({dataset} 30m Real DEM)"
+            }
+        }
+
+    def _generate_synthetic_grid(
         self,
         min_lat: float,
         min_lon: float,
@@ -19,49 +147,38 @@ class ElevationService:
         grid_size: int = 50
     ) -> Dict[str, Any]:
         """
-        Generates or fetches a high-resolution DEM grid (grid_size x grid_size)
-        covering the bounding box [min_lat, min_lon, max_lat, max_lon].
+        Fallback synthetic DEM grid generator based on Chhattisgarh basin gradients.
         """
         lats = np.linspace(min_lat, max_lat, grid_size)
         lons = np.linspace(min_lon, max_lon, grid_size)
         lon_grid, lat_grid = np.meshgrid(lons, lats)
 
-        # Realistic topographic synthesis based on regional geographical gradients
-        # (Shivnath / Kharun river basin slope towards North-East + local micro-relief)
         center_lat = (min_lat + max_lat) / 2.0
         center_lon = (min_lon + max_lon) / 2.0
 
-        # Primary regional gradient (gentle regional slope ~0.5% - 2%)
-        d_lat = (lat_grid - center_lat) * 111.0 # km
-        d_lon = (lon_grid - center_lon) * 105.0 # km
+        d_lat = (lat_grid - center_lat) * 111.0  # km
+        d_lon = (lon_grid - center_lon) * 105.0  # km
 
-        # Regional tilt towards East/North-East (draining toward Mahanadi basin)
         regional_tilt = -1.8 * d_lon + 1.2 * d_lat
-
-        # Terrain undulating ridges and drainage channels
         wave1 = 6.5 * np.sin(d_lat * 2.5 + d_lon * 1.8)
         wave2 = 4.2 * np.cos(d_lat * 4.2 - d_lon * 3.1)
         wave3 = 2.5 * np.sin(np.sqrt(d_lat**2 + d_lon**2) * 5.0)
 
-        # Local natural depressions / micro-sinks
         depression = -5.0 * np.exp(-((d_lat - 0.2)**2 + (d_lon + 0.15)**2) / 0.15)
         depression2 = -4.2 * np.exp(-((d_lat + 0.3)**2 + (d_lon - 0.25)**2) / 0.2)
 
         elev_grid = BASE_ELEVATION_BHILAI + regional_tilt + wave1 + wave2 + wave3 + depression + depression2
-        
-        # Smooth with gaussian-like kernel
         elev_grid = np.round(elev_grid, 2)
 
         min_elev = float(np.min(elev_grid))
         max_elev = float(np.max(elev_grid))
         mean_elev = float(np.mean(elev_grid))
 
-        # Calculate slope grid (in percentage)
-        dx = (lons[1] - lons[0]) * 105000.0 # meters per grid cell lon
-        dy = (lats[1] - lats[0]) * 111000.0 # meters per grid cell lat
+        dx = (lons[1] - lons[0]) * 105000.0
+        dy = (lats[1] - lats[0]) * 111000.0
 
         gy, gx = np.gradient(elev_grid, dy, dx)
-        slope_grid = np.sqrt(gx**2 + gy**2) * 100.0 # slope %
+        slope_grid = np.sqrt(gx**2 + gy**2) * 100.0
 
         return {
             "lats": lats.tolist(),
@@ -74,7 +191,9 @@ class ElevationService:
                 "mean_elevation_m": round(mean_elev, 2),
                 "relief_m": round(max_elev - min_elev, 2),
                 "avg_slope_percent": round(float(np.mean(slope_grid)), 2),
-                "grid_resolution_m": round(float(dx), 1)
+                "grid_resolution_m": round(float(dx), 1),
+                "grid_shape": list(elev_grid.shape),
+                "data_source": "Synthetic Regional Topography Model (Fallback)"
             }
         }
 
